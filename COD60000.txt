@@ -1,0 +1,248 @@
+OBJECT Codeunit 60000 CKL Adv. Line Recognition Mgt.
+{
+  OBJECT-PROPERTIES
+  {
+    Date=12/20/17;
+    Time=10:19:00 PM;
+    Modified=Yes;
+    Version List=CKL;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      Text001@1000000000 : TextConst 'DEU=Zuweisung abgebrochen, da keine Felder fr die Verknpfung ausgew„hlt worden sind!;ENU=Linking cancelled because you didn''t select fields for linking!';
+      Text002@1000000001 : TextConst 'DEU=Es wurden %1 Felder mit dem Zeilenidentifikationsfeld verknpft!;ENU=%1 fields have been linked to the line identification field!';
+      Text003@1000000002 : TextConst 'DEU=Zeilenidentifikationsfeld %1 ist noch nicht trainiert!;ENU=The line identification %1 field is not trained yet!';
+      Text004@1000000003 : TextConst 'DEU=Bitte den Beispielwert fr %1 in der ersten Belegzeile trainieren!;ENU=Please train the example value for %1 in the first document line!';
+      Text005@1000000004 : TextConst 'DEU=Bitte w„hlen Sie zuerst das gewnschte Zeilenidentifikationsfeld aus!;ENU=Please choose the line identification field first!';
+
+    PROCEDURE LinkToLineIdentField@1000000010(VAR TempDocumentLine@1000000008 : Record 6085596);
+    VAR
+      lLineIdentTemplateField@1000000007 : Record 6085580;
+      lTemplateFieldsToAssign@1000000005 : Record 6085580;
+      lLineIdentTemplateFieldDocValue@1000000003 : Record 6085593;
+      lTemplate@1000000004 : Record 6085579;
+      lFieldsLinked@1000000000 : Integer;
+    BEGIN
+      // Get the line identification field
+      GetLineIdentenficationField(lLineIdentTemplateField,TempDocumentLine);
+
+      // Get document value of the line identification field
+      GetLineIdentFieldDocumentValue(lLineIdentTemplateFieldDocValue,TempDocumentLine,lLineIdentTemplateField);
+
+      // Select fields to link with line identification field
+      IF NOT GetFieldsToLinkWithLineIdentField(lTemplateFieldsToAssign,TempDocumentLine,lLineIdentTemplateField) THEN
+        ERROR(Text001);
+
+      // Link fields to line identification field
+      lFieldsLinked := LinkFieldsToLineIdentificationField(lTemplateFieldsToAssign,TempDocumentLine,lLineIdentTemplateFieldDocValue);
+
+      // Change Codeunit ID to our 60001 codeunit on template
+      IF lFieldsLinked > 0 THEN BEGIN
+        IF lTemplate.GET(TempDocumentLine."Template No.") THEN BEGIN
+          lLineIdentTemplateField.MODIFY(TRUE);
+
+          lTemplate.VALIDATE("Codeunit ID: Line Capture",60001);
+          lTemplate.MODIFY(TRUE);
+        END;
+      END;
+
+      MESSAGE(Text002,lFieldsLinked);
+    END;
+
+    PROCEDURE LinkToCaptionOffset@1000000009(VAR TempDocumentLine@1000000010 : Record 6085596;TopCaption@1000000000 : Boolean);
+    VAR
+      lLineIdentField@1000000007 : Record 6085580;
+      lTemplateField@1000000006 : Record 6085580;
+      lTemplateFieldBuffer@1000000005 : TEMPORARY Record 6085580;
+      lLineIdentDocumentValue@1000000004 : Record 6085593;
+      lDocumentValue@1000000003 : Record 6085593;
+      lTemplateFieldCaption@1000000008 : Record 6085581;
+      lGlobalWord@1000000011 : Record 6085592;
+      Page@1000000014 : Record 6085591;
+      CaptureEngine@1000000009 : Codeunit 6085575;
+      lTemplateFieldList@1000000002 : Page 6085602;
+      lFieldCounter@1000000001 : Integer;
+    BEGIN
+      // Check for configured line identification field
+      lLineIdentField.SETRANGE("Template No.",TempDocumentLine."Template No.");
+      lLineIdentField.SETRANGE(Type,lLineIdentField.Type::Line);
+      lLineIdentField.SETRANGE("Line Identification Field", TRUE);
+      IF NOT lLineIdentField.FINDFIRST THEN
+        ERROR('Es wurde noch kein Zeilenidentifikationfeld konfiguriert!');
+
+      // Check if the line identification field has been configured
+      WITH lLineIdentDocumentValue DO BEGIN
+        SETRANGE("Document No.",TempDocumentLine."Document No.");
+        SETRANGE("Is Value",TRUE);
+        SETRANGE(Code,lLineIdentField.Code);
+        SETRANGE("Line No.",1);
+        SETRANGE(Type,1);
+        SETRANGE("Is Valid",TRUE);
+        SETRANGE("Template No.",TempDocumentLine."Template No.");
+        IF NOT lLineIdentDocumentValue.FINDFIRST THEN
+          ERROR('Zeilenidentifikationsfeld ist noch nicht trainiert!');
+      END;
+
+      // select fields to be processed
+      lTemplateField.SETRANGE("Template No.",TempDocumentLine."Template No.");
+      lTemplateField.SETRANGE(Type,lTemplateField.Type::Line);
+      lTemplateField.SETRANGE("Line Identification Field",FALSE);
+      lTemplateFieldList.SETTABLEVIEW(lTemplateField);
+      lTemplateFieldList.LOOKUPMODE(TRUE);
+      IF lTemplateFieldList.RUNMODAL = ACTION::LookupOK THEN BEGIN
+        lTemplateFieldList.GetFieldSelection(lTemplateField);
+        IF lTemplateField.FIND('-') THEN
+        REPEAT
+          // Check if the caption for the current field is configured
+          lTemplateField.CALCFIELDS("1. Caption");
+          IF lTemplateField."1. Caption" = '' THEN
+            ERROR('Es ist keine Caption fr das Feld %1 - %2 definiert!',lTemplateField.Code,lTemplateField."Field Name");
+
+          // check if the value for the current field has been configured
+          WITH lDocumentValue DO BEGIN
+            SETRANGE("Document No.",TempDocumentLine."Document No.");
+            SETRANGE("Is Value",TRUE);
+            SETRANGE(Code,lTemplateField.Code);
+            SETRANGE("Line No.",0,1);
+            SETRANGE(Type,1);
+            SETRANGE("Is Valid",TRUE);
+            SETRANGE("Template No.",TempDocumentLine."Template No.");
+
+            IF NOT lDocumentValue.FINDFIRST THEN
+              ERROR('Bitte den Beispielwert fr %1 aus der ersten Belegzeile trainieren!',lTemplateField.Code);
+          END;
+
+          // Caption Position finden fr Offset >>>
+          lTemplateFieldCaption.SETRANGE("Template No.",lTemplateField."Template No.");
+          lTemplateFieldCaption.SETRANGE(Type,lTemplateField.Type);
+          lTemplateFieldCaption.SETRANGE(Code,lTemplateField.Code);
+          lTemplateFieldCaption.SETRANGE("Entry No.",1);
+          lTemplateFieldCaption.SETRANGE("Page No.",TempDocumentLine."Page No.");
+          IF TopCaption THEN
+            lTemplateFieldCaption.SETFILTER(Top,'<%1',lLineIdentDocumentValue.Top)
+          ELSE
+            lTemplateFieldCaption.SETFILTER(Top,'>%1',lLineIdentDocumentValue.Bottom);
+
+          IF lTemplateFieldCaption.FINDSET(TRUE,FALSE) THEN BEGIN
+            lGlobalWord.SETRANGE("Document No.",TempDocumentLine."Document No.");
+            lGlobalWord.SETRANGE("Page No.",TempDocumentLine."Page No.");
+            lGlobalWord.SETRANGE(Word,lTemplateFieldCaption.Caption);
+            lGlobalWord.SETRANGE(Top,lTemplateFieldCaption.Top);
+            lGlobalWord.SETRANGE(Left,lTemplateFieldCaption.Left);
+            IF lGlobalWord.FINDSET THEN BEGIN
+              lTemplateField."Offset Top"    := lDocumentValue.Top    - lGlobalWord.Top;
+              lTemplateField."Offset Left"   := lDocumentValue.Left   - lGlobalWord.Left;
+              lTemplateField."Offset Bottom" := lDocumentValue.Bottom - lGlobalWord.Bottom;
+              lTemplateField."Offset Right"  := lDocumentValue.Right  - lGlobalWord.Right;
+              IF lTemplateField.MODIFY(TRUE) THEN
+                lFieldCounter += 1;
+            END;
+          END;
+        UNTIL lTemplateField.NEXT = 0;
+        MESSAGE('%1 Feld(er) holen Ihre Werte aus einem Kopffeld!',lFieldCounter);
+      END;
+    END;
+
+    LOCAL PROCEDURE GetLineIdentenficationField@1000000002(VAR TemplateField@1000000002 : Record 6085580;TempDocumentLine@1000000000 : Record 6085596) : Boolean;
+    VAR
+      TemplateFieldList@1000000001 : Page 6085602;
+    BEGIN
+      // This method tries to find (or let the user select a new) line identification field
+
+      WITH TemplateField DO BEGIN
+        // check if there is a defined line identification field
+        SETRANGE("Template No.",TempDocumentLine."Template No.");
+        SETRANGE(Type,Type::Line);
+        SETRANGE("Line Identification Field", TRUE);
+        IF FINDSET THEN
+          EXIT(TRUE);
+
+        // let the user setup a new line identification field
+        MESSAGE(Text005);
+        SETRANGE("Line Identification Field",FALSE);
+
+        TemplateFieldList.SETRECORD(TemplateField);
+        TemplateFieldList.SETTABLEVIEW(TemplateField);
+        TemplateFieldList.LOOKUPMODE(TRUE);
+        IF TemplateFieldList.RUNMODAL = ACTION::LookupOK THEN BEGIN
+          TemplateFieldList.GETRECORD(TemplateField);
+          TemplateField."Line Identification Field" := TRUE;
+          //TemplateField.MODIFY(TRUE);
+          EXIT(TRUE);
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE GetLineIdentFieldDocumentValue@1000000001(VAR LineIdentTemplateFieldDocValue@1000000000 : Record 6085593;TempDocumentLine@1000000001 : Record 6085596;LineIdentTemplateField@1000000002 : Record 6085580);
+    BEGIN
+      WITH LineIdentTemplateFieldDocValue DO BEGIN
+        SETRANGE("Document No.",TempDocumentLine."Document No.");
+        SETRANGE("Is Value",TRUE);
+        SETRANGE(Code,LineIdentTemplateField.Code);
+        SETRANGE("Line No.",1);
+        SETRANGE(Type,1);
+        SETRANGE("Is Valid",TRUE);
+        SETRANGE("Template No.",TempDocumentLine."Template No.");
+        IF NOT FINDFIRST THEN
+          ERROR(Text003,LineIdentTemplateField.Code);
+      END;
+    END;
+
+    LOCAL PROCEDURE GetFieldsToLinkWithLineIdentField@1000000011(VAR TemplateFieldsToAssign@1000000000 : Record 6085580;TempDocumentLine@1000000001 : Record 6085596;LineIdentTemplateField@1000000002 : Record 6085580) : Boolean;
+    VAR
+      lTemplateFieldList@1000000003 : Page 6085602;
+    BEGIN
+      WITH TemplateFieldsToAssign DO BEGIN
+        SETRANGE("Template No.",TempDocumentLine."Template No.");
+        SETRANGE(Type,Type::Line);
+        SETFILTER(Code,'<>%1',LineIdentTemplateField.Code);
+        lTemplateFieldList.SETTABLEVIEW(TemplateFieldsToAssign);
+        lTemplateFieldList.LOOKUPMODE(TRUE);
+        IF lTemplateFieldList.RUNMODAL = ACTION::LookupOK THEN BEGIN
+          lTemplateFieldList.GetFieldSelection(TemplateFieldsToAssign);
+          EXIT(TRUE);
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE LinkFieldsToLineIdentificationField@1000000016(VAR TemplateFieldsToAssign@1000000001 : Record 6085580;TempDocumentLine@1000000000 : Record 6085596;LineIdentTemplateFieldDocValue@1000000003 : Record 6085593) FieldsLinked : Integer;
+    VAR
+      lDocumentValue@1000000002 : Record 6085593;
+    BEGIN
+      IF TemplateFieldsToAssign.FIND('-') THEN
+      REPEAT
+        WITH lDocumentValue DO BEGIN
+          SETRANGE("Document No.",TempDocumentLine."Document No.");
+          SETRANGE("Is Value",TRUE);
+          SETRANGE(Code,TemplateFieldsToAssign.Code);
+          SETRANGE("Line No.",0,1);
+          SETRANGE(Type,1);
+          SETRANGE("Is Valid",TRUE);
+          SETRANGE("Template No.",TempDocumentLine."Template No.");
+
+          IF NOT lDocumentValue.FINDFIRST THEN
+            ERROR(Text004,TemplateFieldsToAssign.Code);
+
+          TemplateFieldsToAssign."Offset Top" := Top - LineIdentTemplateFieldDocValue.Top;
+          TemplateFieldsToAssign."Offset Left" := Left - LineIdentTemplateFieldDocValue.Left;
+          TemplateFieldsToAssign."Offset Bottom" := Bottom - LineIdentTemplateFieldDocValue.Bottom;
+          TemplateFieldsToAssign."Offset Right" := Right - LineIdentTemplateFieldDocValue.Right;
+          TemplateFieldsToAssign."Field Calculation Type" := TemplateFieldsToAssign."Field Calculation Type"::LineIdentificationField;
+          IF TemplateFieldsToAssign.MODIFY(TRUE) THEN
+            FieldsLinked += 1;
+        END;
+      UNTIL TemplateFieldsToAssign.NEXT = 0;
+    END;
+
+    BEGIN
+    END.
+  }
+}
+

@@ -2,9 +2,10 @@ OBJECT Page 6085586 Template Field Card
 {
   OBJECT-PROPERTIES
   {
-    Date=06/26/17;
-    Time=[ 1:00:00 AM];
-    Version List=DCW16.00.00.4.50;
+    Date=12/20/17;
+    Time=10:38:22 PM;
+    Modified=Yes;
+    Version List=DCW16.00.00.4.50,CKL;
   }
   PROPERTIES
   {
@@ -470,6 +471,39 @@ OBJECT Page 6085586 Template Field Card
                          END;
                           }
 
+    { 1000000032;1;Group  ;
+                CaptionML=[DEU=CKL Erweiterte Zeilenerkennung;
+                           ENU=CKL Advanced Line Recognition];
+                GroupType=Group }
+
+    { 1000000031;2;Field  ;
+                SourceExpr="Field valid at min Top" }
+
+    { 1000000029;2;Field  ;
+                SourceExpr="Field valid at min Left" }
+
+    { 1000000028;2;Field  ;
+                SourceExpr="Line Identification Field" }
+
+    { 1000000027;2;Field  ;
+                SourceExpr="Field Calculation Type" }
+
+    { 1000000014;2;Field  ;
+                SourceExpr="Offset Top";
+                Visible=IsLineIdentField }
+
+    { 1000000012;2;Field  ;
+                SourceExpr="Offset Bottom";
+                Visible=IsLineIdentField }
+
+    { 1000000007;2;Field  ;
+                SourceExpr="Offset Left";
+                Visible=IsLineIdentField }
+
+    { 1000000006;2;Field  ;
+                SourceExpr="Offset Right";
+                Visible=IsLineIdentField }
+
   }
   CODE
   {
@@ -495,6 +529,7 @@ OBJECT Page 6085586 Template Field Card
       DestHeaderField@1160040007 : Text[250];
       DestLineField@1160040008 : Text[250];
       FixedValue@1000 : Text[250];
+      IsLineIdentField@1000000000 : Boolean INDATASET;
 
     LOCAL PROCEDURE UpdateControls@6085573();
     VAR
@@ -517,9 +552,20 @@ OBJECT Page 6085586 Template Field Card
       IsDestLine := DocCat."Destination Line Table No." <> 0;
       LineRecognitionEnabled := Template."Recognize Lines" = Template."Recognize Lines"::Yes;
       IsNewField := Code = '';
+
+      //CKL/SR >>>
+      IsLineIdentField := "Field Calculation Type" <> "Field Calculation Type"::Default;
+      //CKL/SR <<<
     END;
 
     BEGIN
+    {
+      // CKL Software GmbH >>>
+      // SR: - New group CKL Erweiterte Zeilenerkennung
+      //       Fields from TAB6085580 inserted in new group
+      //     - New global Var IsLineIdentField
+      // CKL Software GmbH <<<
+    }
     END.
   }
 }
