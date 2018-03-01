@@ -15,7 +15,7 @@ Please note that the code is based on Microsoft Dynamics NAV 2016 RTM database a
 
 1. Clone the project / Download all  *.txt files to your client
 2. Import all txt files into your database via the development environment 
-3. Filter the versionlist for *CKL and compile all objects
+3. Filter the versionlist for *ALR* and compile all objects
 
 ## How to use the extension ##
 The concept of the Advanced Line Recognition extension is to identify at least one field per line by Document Capture standard code - we'll call this field "line identification field" (LIF) in this guide.
