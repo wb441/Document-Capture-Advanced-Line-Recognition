@@ -28,3 +28,4 @@ Based on the position of this field the user will define the "offset" of other f
 4. Run Recognize Fields action from the menu to recognize the fields of the selected document
 5. Open the Document Card from the menu
 6. Capture the LIF
+7. 
