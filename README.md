@@ -27,6 +27,12 @@ Based on the position of this field the user will define the "offset" of other f
 1. Open Dynamics NAV Client
 2. Import open Documents to Document Capture
 3. Open the Document Journal
-4. Run Recognize Fields action from the menu to recognize the fields of the selected document
+4. Run `Recognize Fields` action from the menu to recognize the fields of the selected document
 5. Open the Document Card from the menu
 6. Capture the LIF
+7. Mark the **values** of the offset fields with left mouse button
+8. Link the offset fields to the LIF via line action `Adv. line recognition` ==> `Link to line ident. field`
+9. Test your setup by `Recognize Fields`
+
+Still not sure what to do? Watch this click guide:
+![](https://github.com/sradloff/Document-Capture-Advanced-Line-Recognition/raw/master/Documentation/UsageOfAdvancedLineRecognition.gif)
