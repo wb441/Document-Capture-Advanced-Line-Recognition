@@ -2,10 +2,10 @@ OBJECT Page 6085586 Template Field Card
 {
   OBJECT-PROPERTIES
   {
-    Date=12/20/17;
-    Time=10:38:22 PM;
+    Date=03/01/18;
+    Time=12:00:00 PM;
     Modified=Yes;
-    Version List=DCW16.00.00.4.50,CKL;
+    Version List=DCW16.00.00.4.50,ALR001;
   }
   PROPERTIES
   {
@@ -492,16 +492,16 @@ OBJECT Page 6085586 Template Field Card
                 SourceExpr="Offset Top";
                 Visible=IsLineIdentField }
 
-    { 1000000012;2;Field  ;
-                SourceExpr="Offset Bottom";
-                Visible=IsLineIdentField }
-
     { 1000000007;2;Field  ;
                 SourceExpr="Offset Left";
                 Visible=IsLineIdentField }
 
+    { 1000000012;2;Field  ;
+                SourceExpr="Offset Height";
+                Visible=IsLineIdentField }
+
     { 1000000006;2;Field  ;
-                SourceExpr="Offset Right";
+                SourceExpr="Offset Width";
                 Visible=IsLineIdentField }
 
   }

@@ -2,10 +2,10 @@ OBJECT Codeunit 60000 CKL Adv. Line Recognition Mgt.
 {
   OBJECT-PROPERTIES
   {
-    Date=12/20/17;
-    Time=10:19:00 PM;
+    Date=03/01/18;
+    Time=12:00:00 PM;
     Modified=Yes;
-    Version List=CKL;
+    Version List=ALR001;
   }
   PROPERTIES
   {
@@ -21,6 +21,7 @@ OBJECT Codeunit 60000 CKL Adv. Line Recognition Mgt.
       Text003@1000000002 : TextConst 'DEU=Zeilenidentifikationsfeld %1 ist noch nicht trainiert!;ENU=The line identification %1 field is not trained yet!';
       Text004@1000000003 : TextConst 'DEU=Bitte den Beispielwert fÅr %1 in der ersten Belegzeile trainieren!;ENU=Please train the example value for %1 in the first document line!';
       Text005@1000000004 : TextConst 'DEU=Bitte wÑhlen Sie zuerst das gewÅnschte Zeilenidentifikationsfeld aus!;ENU=Please choose the line identification field first!';
+      Text006@1000000005 : TextConst 'DEU=Codeunit %1 existiert nicht!;ENU=Codeunit %1 does not exist!';
 
     PROCEDURE LinkToLineIdentField@1000000010(VAR TempDocumentLine@1000000008 : Record 6085596);
     VAR
@@ -48,7 +49,7 @@ OBJECT Codeunit 60000 CKL Adv. Line Recognition Mgt.
         IF lTemplate.GET(TempDocumentLine."Template No.") THEN BEGIN
           lLineIdentTemplateField.MODIFY(TRUE);
 
-          lTemplate.VALIDATE("Codeunit ID: Line Capture",60001);
+          lTemplate.VALIDATE("Codeunit ID: Line Capture",GetAdvLineRecCodeunit());
           lTemplate.MODIFY(TRUE);
         END;
       END;
@@ -139,8 +140,8 @@ OBJECT Codeunit 60000 CKL Adv. Line Recognition Mgt.
             IF lGlobalWord.FINDSET THEN BEGIN
               lTemplateField."Offset Top"    := lDocumentValue.Top    - lGlobalWord.Top;
               lTemplateField."Offset Left"   := lDocumentValue.Left   - lGlobalWord.Left;
-              lTemplateField."Offset Bottom" := lDocumentValue.Bottom - lGlobalWord.Bottom;
-              lTemplateField."Offset Right"  := lDocumentValue.Right  - lGlobalWord.Right;
+              lTemplateField."Offset Height" := lDocumentValue.Bottom - lGlobalWord.Bottom;
+              lTemplateField."Offset Width"  := lDocumentValue.Right  - lGlobalWord.Right;
               IF lTemplateField.MODIFY(TRUE) THEN
                 lFieldCounter += 1;
             END;
@@ -232,13 +233,26 @@ OBJECT Codeunit 60000 CKL Adv. Line Recognition Mgt.
 
           TemplateFieldsToAssign."Offset Top" := Top - LineIdentTemplateFieldDocValue.Top;
           TemplateFieldsToAssign."Offset Left" := Left - LineIdentTemplateFieldDocValue.Left;
-          TemplateFieldsToAssign."Offset Bottom" := Bottom - LineIdentTemplateFieldDocValue.Bottom;
-          TemplateFieldsToAssign."Offset Right" := Right - LineIdentTemplateFieldDocValue.Right;
+          TemplateFieldsToAssign."Offset Height" := Bottom - Top; // - LineIdentTemplateFieldDocValue.Bottom;
+          TemplateFieldsToAssign."Offset Width" := Right - Left; //LineIdentTemplateFieldDocValue.Right;
           TemplateFieldsToAssign."Field Calculation Type" := TemplateFieldsToAssign."Field Calculation Type"::LineIdentificationField;
           IF TemplateFieldsToAssign.MODIFY(TRUE) THEN
             FieldsLinked += 1;
         END;
       UNTIL TemplateFieldsToAssign.NEXT = 0;
+    END;
+
+    LOCAL PROCEDURE GetAdvLineRecCodeunit@1000000000() : Integer;
+    VAR
+      Object@1000000000 : Record 2000000001;
+    BEGIN
+      Object.SETRANGE(Type,Object.Type::Codeunit);
+      Object.SETRANGE(Name,'CKL Advanced Line Capture');
+      IF Object.ISEMPTY THEN
+        ERROR(Text006,'CKL Advanced Line Capture');
+
+      IF Object.FINDSET THEN
+        EXIT(Object.ID);
     END;
 
     BEGIN

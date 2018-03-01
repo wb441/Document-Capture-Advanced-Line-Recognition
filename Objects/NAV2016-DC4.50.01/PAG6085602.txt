@@ -2,10 +2,10 @@ OBJECT Page 6085602 Template Field List
 {
   OBJECT-PROPERTIES
   {
-    Date=12/20/17;
-    Time=10:16:52 PM;
+    Date=03/01/18;
+    Time=12:00:00 PM;
     Modified=Yes;
-    Version List=DCW16.00.00.4.04,CKL;
+    Version List=DCW16.00.00.4.04,ALR001;
   }
   PROPERTIES
   {
