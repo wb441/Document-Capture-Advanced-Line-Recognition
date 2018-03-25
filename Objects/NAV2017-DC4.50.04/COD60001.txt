@@ -1,0 +1,503 @@
+OBJECT Codeunit 60001 CKL Advanced Line Capture
+{
+  OBJECT-PROPERTIES
+  {
+    Date=26.03.18;
+    Time=00:01:25;
+    Modified=Yes;
+    Version List=ALR002;
+  }
+  PROPERTIES
+  {
+    TableNo=6085590;
+    OnRun=BEGIN
+            Document := Rec;
+            Code;
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      Text001@1160040000 : TextConst 'ENU="Please create a %1 with %2 = ''%3''"';
+      Document@1210050000 : Record 6085590;
+      CaptureMgt@1160040001 : Codeunit 6085576;
+      DocumentComment@1000000000 : Record 6085594;
+      Text002@1000000001 : TextConst 'DEU=Zeilenidentifikationsfeld %1 - %2 verwendet!';
+
+    PROCEDURE Code@1000000000();
+    VAR
+      TempDocLine@1000000001 : TEMPORARY Record 6085596;
+      TemplateField@1000000000 : Record 6085580;
+      TempSortedDocumentField@1113400000 : TEMPORARY Record 6085595;
+    BEGIN
+      //RUN STANDARD LINE CAPTURING CODEUNIT
+      CODEUNIT.RUN(CODEUNIT::"Purch./Sales - Line Capture",Document);
+
+      //BUILD TEMPORARY LINE TABLE AND LOOP LINES
+      Document.BuildTempLinesTable(TempDocLine);
+
+      CheckValuesForMinMaxPosition(Document,TempDocLine);
+
+
+
+      IF TempDocLine.FINDSET THEN BEGIN
+        FillSortedFieldBuffer(TempSortedDocumentField,TempDocLine);
+        REPEAT
+          TempSortedDocumentField.SETCURRENTKEY("Document No.","Sort Order");
+          IF TempSortedDocumentField.FINDFIRST THEN
+            REPEAT
+              TemplateField.GET(TempDocLine."Template No.",TemplateField.Type::Line,TempSortedDocumentField."Field Code");
+              CASE TemplateField."Advanced Line Recognition Type" OF
+                TemplateField."Advanced Line Recognition Type"::OffsetField:
+                  FindValueFromOffsetField(TempDocLine,TemplateField);
+                TemplateField."Advanced Line Recognition Type"::CaptionInLine:
+                  FindValueFromCaption(TempDocLine,TemplateField);
+                TemplateField."Advanced Line Recognition Type"::OffsetLine:
+                  FindValueFromOffsetLine(TempDocLine,TemplateField);
+            END;
+          UNTIL TempSortedDocumentField.NEXT = 0;
+        UNTIL TempDocLine.NEXT = 0;
+      END;
+
+      //RENUMBER IF LINES DELETED
+      RenumberLines(Document);
+    END;
+
+    LOCAL PROCEDURE CheckValuesForMinMaxPosition@1000000004(VAR DCDocument@1000000004 : Record 6085590;VAR TempDocLine@1000000000 : TEMPORARY Record 6085596);
+    VAR
+      Document@1000000008 : Record 6085590;
+      DocumentValue@1000000007 : Record 6085593;
+      Field@1000000006 : Record 6085580;
+      Template@1000000003 : Record 6085579;
+      lFieldCodes@1000000001 : ARRAY [20] OF Code[20];
+      i@1000000005 : Integer;
+      NoOfLines@1000000002 : Integer;
+    BEGIN
+      Field.SETCURRENTKEY("Template No.",Type,"Sort Order");
+      Field.SETRANGE("Template No.",DCDocument."Template No.");
+      Field.SETRANGE(Type,Field.Type::Line);
+      IF Field.FINDSET THEN
+        REPEAT
+          IF (Field."Field valid at min Top" > 0)  OR (Field."Field valid at min Left" > 0) THEN BEGIN
+            DocumentValue.SETCURRENTKEY("Document No.","Is Value",Type,"Line No.");
+            DocumentValue.SETRANGE("Document No.",DCDocument."No.");
+            DocumentValue.SETRANGE("Is Value",TRUE);
+            DocumentValue.SETRANGE(Type,DocumentValue.Type::Line);
+            DocumentValue.SETRANGE(Code,Field.Code);
+            IF DocumentValue.FINDSET THEN
+              REPEAT
+                IF ((Field."Field valid at min Top" > 0) AND (DocumentValue.Top < Field."Field valid at min Top")) OR
+                   ((Field."Field valid at min Left" > 0) AND (DocumentValue.Left < Field."Field valid at min Left"))
+                THEN
+                  DocumentValue.DELETE(TRUE);
+              UNTIL DocumentValue.NEXT = 0;
+          END;
+
+        UNTIL (Field.NEXT = 0);
+    END;
+
+    LOCAL PROCEDURE FindValueFromOffsetField@1210050000(TempDocLine@1210050009 : TEMPORARY Record 6085596;VAR OffsetField@1000000001 : Record 6085580);
+    VAR
+      OffsetSourceField@1113400000 : Record 6085580;
+      OffsetSourceFieldValue@1113400001 : Record 6085593;
+      DocumentValue@1113400002 : Record 6085593;
+      CurrPage@1210050003 : Record 6085591;
+      CurrTop@1000000002 : Integer;
+      CurrLeft@1000000003 : Integer;
+      CurrBottom@1000000004 : Integer;
+      CurrRight@1000000005 : Integer;
+    BEGIN
+      //Get Line Identification Field Position
+      IF NOT OffsetSourceField.GET(TempDocLine."Template No.",OffsetSourceField.Type::Line,OffsetField."Offset Source Field") THEN
+        EXIT;
+
+      // Get current value record of offset source field
+      IF NOT OffsetSourceFieldValue.GET(TempDocLine."Document No.",TRUE,OffsetSourceField.Code,TempDocLine."Line No.") THEN
+        EXIT;
+
+      CurrPage.GET(Document."No.",OffsetSourceFieldValue."Page No.");
+
+      WITH OffsetSourceFieldValue DO BEGIN
+        // Create offset area for value capturing
+        CurrTop := Top + OffsetField."Offset Top";
+        CurrLeft := Left + OffsetField."Offset Left";
+        CurrBottom := CurrTop + OffsetField."Offset Height";
+        CurrRight := CurrLeft + OffsetField."Offset Width";
+        CaptureMgt.CaptureFromPos(CurrPage,OffsetField,TempDocLine."Line No.",TRUE,CurrTop,CurrLeft,CurrBottom,CurrRight,DocumentValue);
+      END;
+    END;
+
+    LOCAL PROCEDURE FindValueFromCaption@1113400000(VAR TempDocLine@1210050009 : TEMPORARY Record 6085596;VAR CurrField@1000000001 : Record 6085580);
+    VAR
+      DocumentValue@1113400000 : Record 6085593;
+      DocumentValueCopy@1113400004 : Record 6085593;
+      lCurrPage@1113400009 : Record 6085591;
+      NextPos@1113400001 : Integer;
+      CaptureEngine@1113400002 : Codeunit 6085575;
+      Word@1113400003 : Text[1024];
+      lFromTopPos@1113400008 : Integer;
+      lFromTopPage@1113400007 : Integer;
+      lToBottomPos@1113400006 : Integer;
+      lToBottomPage@1113400005 : Integer;
+      i@1113400010 : Integer;
+    BEGIN
+      IF DocumentValue.GET(TempDocLine."Document No.",TRUE,CurrField.Code,TempDocLine."Line No.") THEN
+        DocumentValue.DELETE;
+
+      CLEAR(Word);
+
+      // Get Position of caption
+      GetNextLinesTopPosition(TempDocLine,lFromTopPage,lFromTopPos,lToBottomPage,lToBottomPos);
+
+      FOR i := lFromTopPage TO lToBottomPage DO BEGIN
+        lCurrPage.GET(Document."No.",i);
+
+        IF lFromTopPage < lToBottomPage THEN
+          CaptureEngine.SetLineRegion(i,lFromTopPos,i,lCurrPage."Bottom Word Pos.")
+        ELSE
+          IF (i > lFromTopPage) AND (i < lToBottomPage) THEN
+            CaptureEngine.SetLineRegion(i,0,i,lCurrPage."Bottom Word Pos.")
+          ELSE
+            CaptureEngine.SetLineRegion(i,lFromTopPos,i,lToBottomPos);
+
+        Word := CaptureEngine.CaptureField(Document,TempDocLine."Page No.",CurrField,FALSE);
+        IF Word <> '' THEN BEGIN
+          IF (DocumentValue.GET(Document."No.",TRUE,CurrField.Code,0)) THEN BEGIN
+            DocumentValueCopy := DocumentValue;
+            DocumentValueCopy."Line No." := TempDocLine."Line No.";
+            DocumentValueCopy.INSERT;
+            DocumentValue.DELETE;
+          END;
+          CaptureMgt.UpdateFieldValue(Document."No.",TempDocLine."Page No.",TempDocLine."Line No.",CurrField,Word,FALSE,FALSE);
+          EXIT;
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE FindValueFromOffsetLine@1113400001(VAR TempDocLine@1210050009 : TEMPORARY Record 6085596;VAR CurrField@1000000001 : Record 6085580);
+    VAR
+      Template@1113400021 : Record 6085579;
+      DocumentValue@1113400000 : Record 6085593;
+      DocumentValueNew@1113400022 : Record 6085593;
+      CaptionStartWord@1113400004 : ARRAY [100] OF Record 6085592;
+      CaptionEndWord@1113400003 : ARRAY [100] OF Record 6085592;
+      CaptionPage@1113400005 : Record 6085591;
+      CurrPage@1113400017 : Record 6085591;
+      CaptionValue@1113400006 : Record 6085593;
+      CaptionPageNo@1113400001 : Integer;
+      CaptionFound@1113400002 : Boolean;
+      PageStop@1113400016 : Boolean;
+      lFromTopPos@1113400010 : Integer;
+      lFromTopPage@1113400009 : Integer;
+      lToBottomPos@1113400008 : Integer;
+      lToBottomPage@1113400007 : Integer;
+      NewBottom@1113400011 : Integer;
+      LineNo@1113400012 : Integer;
+      LineHeight@1113400013 : Integer;
+      Top@1113400014 : Integer;
+      Bottom@1113400015 : Integer;
+      Right@1113400018 : Integer;
+      FieldLeft@1113400019 : Integer;
+      FieldWidth@1113400020 : Integer;
+    BEGIN
+      IF NOT Template.GET(TempDocLine."Template No.")THEN
+        EXIT;
+
+      // Delete old values
+      IF DocumentValue.GET(TempDocLine."Document No.",TRUE,CurrField.Code,TempDocLine."Line No.") THEN
+        DocumentValue.DELETE;
+
+      // Find the Caption position on current or previous pages
+      CaptionPageNo := TempDocLine."Page No.";
+      REPEAT
+        CaptionFound := GetStartAndEndCaption(CaptionStartWord,CaptionEndWord,CurrField,TempDocLine."Document No.",CaptionPageNo);
+        IF NOT CaptionFound THEN
+          CaptionPageNo -= 1;
+      UNTIL (CaptionPageNo = 0) OR CaptionFound;
+
+      IF (NOT CaptionFound) THEN
+        EXIT;
+
+      CaptionPage.GET(TempDocLine."Document No.",CaptionPageNo);
+      GetPositionOfCaption(CaptionPage,CurrField,CaptionStartWord[1],CaptionEndWord[1],CaptionValue,FieldLeft,FieldWidth,Bottom,Top);
+
+      // Hole Position der n„chsten
+      GetNextLinesTopPosition(TempDocLine,lFromTopPage,lFromTopPos,lToBottomPage,lToBottomPos);
+
+      //------------------------------------------------------
+      NewBottom := 0;
+      LineNo := 1000 * TempDocLine."Page No.";
+      LineHeight := 12;
+
+      Top := lFromTopPos;
+      Bottom := Top + LineHeight;
+
+      PageStop := FALSE;
+      CurrPage.GET(TempDocLine."Document No.",lFromTopPage);
+      REPEAT
+        LineNo += 1;
+        Right := FieldLeft + FieldWidth;
+        NewBottom := CaptureTableCell(Template,Document,CurrPage,CurrField,LineNo,Top,FieldLeft,Bottom,Right);
+        IF NewBottom > 0 THEN BEGIN
+          IF NewBottom > Bottom THEN
+            Bottom := NewBottom;
+
+          IF NOT IsFieldValid(CurrField,Document,LineNo) THEN BEGIN
+            DocumentValue.RESET;
+            DocumentValue.SETRANGE("Document No.",Document."No.");
+            DocumentValue.SETRANGE("Line No.",LineNo);
+            DocumentValue.DELETEALL(TRUE);
+          END ELSE
+            PageStop := TRUE;
+        END;
+
+        Top := Bottom;
+        Bottom := Top + LineHeight;//CaptureEngine.GetNextBottom(DocumentPage,Bottom,LineHeight);
+
+        IF (Bottom > CurrPage."Bottom Word Pos.") AND (CurrPage."Page No." < lToBottomPage) THEN BEGIN
+          //Neue Seite - es mssen Variablen zurckgesetzt werden
+          CurrPage.GET(CurrPage."Document No.",CurrPage."Page No." + 1);
+          CaptionPageNo  := CurrPage."Page No.";
+          IF GetStartAndEndCaption(CaptionStartWord,CaptionEndWord,CurrField,TempDocLine."Document No.",CaptionPageNo) THEN BEGIN
+            CaptionPage.GET(TempDocLine."Document No.",CurrPage."Page No.");
+            IF GetPositionOfCaption(CaptionPage,CurrField,CaptionStartWord[1],CaptionEndWord[1],CaptionValue,FieldLeft,FieldWidth,Bottom,Top) THEN BEGIN
+              Bottom := Top + LineHeight;
+              LineNo := 1000 * TempDocLine."Page No.";
+            END;
+
+          END;
+        END ELSE
+          IF (Bottom > CurrPage."Bottom Word Pos.") OR ((Bottom > lToBottomPos) AND (CurrPage."Page No." = lToBottomPage)) THEN
+            PageStop := TRUE;
+      UNTIL PageStop;
+
+      //Zeilennr. speichern
+      IF DocumentValue.GET(TempDocLine."Document No.",TRUE,CurrField.Code,LineNo) THEN BEGIN
+        DocumentValueNew := DocumentValue;
+        DocumentValueNew."Line No." := TempDocLine."Line No.";
+        DocumentValueNew.INSERT;
+        DocumentValue.DELETE;
+      END;
+    END;
+
+    LOCAL PROCEDURE RenumberLines@1000000003(Document@1000000002 : Record 6085590);
+    VAR
+      Value@1000000000 : Record 6085593;
+      Value2@1000000004 : Record 6085593;
+      PrevValue@1000000003 : Record 6085593;
+      i2@1000000001 : Integer;
+    BEGIN
+      Value.RESET;
+      Value.SETCURRENTKEY("Document No.","Is Value",Type,"Page No.","Line No.");
+      Value.SETRANGE("Document No.",Document."No.");
+      Value.SETRANGE("Is Value",TRUE);
+      Value.SETRANGE(Type,Value.Type::Line);
+      IF Value.FINDSET(FALSE,FALSE) THEN BEGIN
+        REPEAT
+          IF Value."Line No." <> PrevValue."Line No." THEN
+            i2 := i2 + 1;
+
+          IF (Value."Line No." <> i2) THEN BEGIN
+            Value2 := Value;
+            Value2."Line No." := i2;
+            Value2.INSERT;
+            Value.DELETE;
+          END;
+          PrevValue := Value;
+        UNTIL Value.NEXT = 0;
+      END;
+    END;
+
+    LOCAL PROCEDURE GetNextLinesTopPosition@1113400002(VAR TempDocLine@1000000000 : Record 6085596;VAR CurrLineTopPage@1113400002 : Integer;VAR CurrLineTopPos@1113400003 : Integer;VAR CurrLineBottomPage@1113400000 : Integer;VAR CurrLineBottomPos@1113400001 : Integer);
+    VAR
+      DocumentValue@1000000001 : Record 6085593;
+      CurrPage@1113400004 : Record 6085591;
+    BEGIN
+      CLEAR(CurrLineTopPage);
+      CLEAR(CurrLineTopPos);
+      CLEAR(CurrLineBottomPage);
+      CLEAR(CurrLineBottomPos);
+
+      //Find next lines top position
+      DocumentValue.SETCURRENTKEY("Document No.","Is Value",Code,"Line No.");
+      DocumentValue.SETRANGE("Document No.",TempDocLine."Document No.");
+      DocumentValue.SETRANGE("Is Value",TRUE);
+      DocumentValue.SETRANGE(Type,DocumentValue.Type::Line);
+      DocumentValue.SETRANGE("Line No.",TempDocLine."Line No.");
+
+      IF DocumentValue.FINDSET THEN
+      REPEAT
+        IF (CurrLineTopPage > DocumentValue."Page No.") OR (CurrLineTopPage = 0) THEN
+          CurrLineTopPage := DocumentValue."Page No.";
+
+        IF (CurrLineBottomPage < DocumentValue."Page No.") OR (CurrLineBottomPage = 0)  THEN
+          CurrLineBottomPage := DocumentValue."Page No.";
+
+        IF CurrLineTopPage = DocumentValue."Page No." THEN BEGIN
+          IF (CurrLineTopPos > DocumentValue.Top) OR (CurrLineTopPos = 0) THEN
+            CurrLineTopPos := DocumentValue.Top;
+
+          IF (CurrLineBottomPos < DocumentValue.Bottom) OR (CurrLineBottomPos = 0) THEN
+             CurrLineBottomPos := DocumentValue.Bottom ;
+        END;
+      UNTIL DocumentValue.NEXT = 0;
+
+      DocumentValue.SETRANGE("Line No.",TempDocLine."Line No." + 1);
+      IF DocumentValue.FINDSET THEN BEGIN
+        REPEAT
+          IF (CurrLineBottomPage < DocumentValue."Page No.") OR (CurrLineBottomPage = 0)  THEN BEGIN
+            CurrLineBottomPage := DocumentValue."Page No.";
+            CurrLineBottomPos := 0;
+          END;
+
+          IF CurrLineBottomPage = DocumentValue."Page No." THEN BEGIN
+            IF (CurrLineBottomPos < DocumentValue.Bottom) OR (CurrLineBottomPos = 0) THEN
+               CurrLineBottomPos := DocumentValue.Bottom ;
+          END;
+        UNTIL DocumentValue.NEXT = 0;
+      END ELSE BEGIN
+        DocumentValue.SETCURRENTKEY("Document No.","Is Value",Code,"Line No.");
+        DocumentValue.SETRANGE("Document No.",TempDocLine."Document No.");
+        DocumentValue.SETRANGE("Is Value",FALSE);
+        DocumentValue.SETRANGE(Type,DocumentValue.Type::Header);
+        DocumentValue.SETFILTER(Top,'>%1',CurrLineBottomPos);
+        IF DocumentValue.FINDSET(FALSE,FALSE) THEN
+          CurrLineBottomPos := DocumentValue.Top
+        ELSE BEGIN
+          CurrPage.GET(TempDocLine."Document No.",CurrLineBottomPage);
+          CurrLineBottomPos := CurrPage."Bottom Word Pos.";
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE GetStartAndEndCaption@1160040001(VAR CaptionStartWord@1160040002 : ARRAY [100] OF TEMPORARY Record 6085592;VAR CaptionEndWord@1160040001 : ARRAY [100] OF TEMPORARY Record 6085592;Field@1160040000 : Record 6085580;DocNo@1160040003 : Code[20];PageNo@1160040006 : Integer) : Boolean;
+    VAR
+      TemplateFieldCaption@1160040005 : Record 6085581;
+      CaptureEngine@1160040004 : Codeunit 6085575;
+      PrevCaptionStartWord@1113400000 : Record 6085592;
+    BEGIN
+      CLEAR(CaptionStartWord);
+      CLEAR(CaptionEndWord);
+
+      TemplateFieldCaption.SETRANGE("Template No.",Field."Template No.");
+      TemplateFieldCaption.SETRANGE(Type,Field.Type);
+      TemplateFieldCaption.SETRANGE(Code,Field.Code);
+      IF TemplateFieldCaption.FINDSET THEN
+        REPEAT
+          IF CaptureEngine.FindCaption(DocNo,PageNo,Field,TemplateFieldCaption,CaptionStartWord,CaptionEndWord) THEN
+            EXIT(TRUE);
+        UNTIL (TemplateFieldCaption.NEXT = 0) OR ((CaptionStartWord[1].Word <> '') AND (CaptionEndWord[1].Word <> ''));
+    END;
+
+    LOCAL PROCEDURE GetPositionOfCaption@1113400003(CurrPage@1113400004 : Record 6085591;CaptionTemplateField@1113400001 : Record 6085580;CaptionStartWord@1113400003 : Record 6085592;CaptionEndWord@1113400002 : Record 6085592;DocumentValue@1113400000 : Record 6085593;VAR FieldLeft@1113400011 : Integer;VAR FieldWidth@1113400010 : Integer;VAR Bottom@1113400009 : Integer;VAR Top@1113400008 : Integer) CaptionValueFound : Boolean;
+    VAR
+      Template@1113400007 : Record 6085579;
+      CaptureEngine@1113400006 : Codeunit 6085575;
+    BEGIN
+      Template.GET(CaptionTemplateField."Template No.");
+
+      //Hole Positionen der caption
+        CaptionValueFound := CaptureMgt.CaptureFromPos(CurrPage,CaptionTemplateField,0,FALSE,CaptionStartWord.Top,CaptionStartWord.Left,
+          CaptionEndWord.Bottom,CaptionEndWord.Right,DocumentValue) <> '';
+
+        IF CaptionValueFound THEN BEGIN
+          FieldLeft := CaptionStartWord.Left +
+          ROUND(CaptionTemplateField."Caption Offset X" * CaptureEngine.GetDPIFactor(CaptionTemplateField."Offset DPI",CurrPage."TIFF Image Resolution"),1);
+
+          IF NOT Template."First Table Line Has Captions" THEN
+            Bottom := CaptionStartWord.Top
+          ELSE IF CaptionStartWord.Bottom > Bottom THEN
+            Bottom := CaptionStartWord.Bottom;
+
+          IF FieldWidth < CaptionEndWord.Right - CaptionStartWord.Left THEN
+            FieldWidth := CaptionEndWord.Right - CaptionStartWord.Left;
+
+          Top := CaptionStartWord.Top;
+        END;
+    END;
+
+    LOCAL PROCEDURE CaptureTableCell@1000000005(VAR Template@161024014 : Record 6085579;VAR Document@1000000009 : Record 6085590;VAR Page@1000000000 : Record 6085591;VAR Field@1000000010 : Record 6085580;LineNo@1000000003 : Integer;Top@1000000007 : Integer;Left@1000000006 : Integer;Bottom@1000000005 : Integer;Right@1000000004 : Integer) : Integer;
+    VAR
+      Value@1000000008 : Record 6085593;
+    BEGIN
+      IF (Right - Left <= 0) OR (Bottom-Top <= 0) THEN
+        EXIT;
+
+      CaptureMgt.CaptureFromPos(Page,Field,LineNo,TRUE,Top,Left,Bottom,Right,Value);
+      Value.FIND('=');
+
+      IF (Value.IsBlank) OR TableCellAlreadyCaptured(Template,Page,Value) THEN
+        Value.DELETE
+      ELSE
+        EXIT(Value.Bottom);
+    END;
+
+    PROCEDURE TableCellAlreadyCaptured@1000000007(VAR Template@161024012 : Record 6085579;VAR Page@1000000002 : Record 6085591;VAR Value@1000000000 : Record 6085593) : Boolean;
+    VAR
+      Value2@1000000001 : Record 6085593;
+      CaptureEngine@1113400000 : Codeunit 6085575;
+    BEGIN
+      Value2.SETCURRENTKEY("Document No.","Is Value",Type,"Page No.");
+      IF NOT Template."First Table Line Has Captions" THEN
+        Value2.SETRANGE("Is Value",TRUE);
+      Value2.SETRANGE("Document No.",Page."Document No.");
+      Value2.SETRANGE(Type,Value2.Type::Line);
+      Value2.SETRANGE("Page No.",Value."Page No.");
+
+      Value.Top := Value.Top + ROUND((Value.Bottom - Value.Top) / 2,1);
+      Value.Left := Value.Left + 3;
+
+      IF Value2.FINDSET(FALSE,FALSE) THEN
+        REPEAT
+          IF (NOT ((Value2.Code = Value.Code) AND (Value2."Line No." = Value."Line No."))) THEN
+            IF CaptureEngine.IntersectsWith(Value,Value2) THEN
+              EXIT(TRUE);
+        UNTIL Value2.NEXT = 0;
+    END;
+
+    LOCAL PROCEDURE IsFieldValid@1113400005(VAR CaptionField@1113400000 : Record 6085580;Document@1000000001 : Record 6085590;LineNo@1000000002 : Integer) : Boolean;
+    VAR
+      Field@1000000000 : Record 6085580;
+      Value@161024012 : Record 6085593;
+    BEGIN
+      IF (CaptionField."Data Type" = Field."Data Type"::Number) AND (NOT CaptionField.Required) THEN
+        IF Value.GET(Document."No.",TRUE,CaptionField.Code,LineNo) THEN
+          EXIT(CaptureMgt.ParseNumber(Field,Value."Value (Text)",Value."Value (Decimal)"));
+
+      EXIT(TRUE);
+    END;
+
+    LOCAL PROCEDURE FillSortedFieldBuffer@1113400004(VAR TempSortedDocumentField@1113400000 : Record 6085595;TempDocLine@1113400003 : TEMPORARY Record 6085596);
+    VAR
+      TemplateField@1113400001 : Record 6085580;
+    BEGIN
+      WITH TemplateField DO BEGIN
+        SETRANGE("Template No.",TempDocLine."Template No.");
+        SETRANGE(Type,Type::Line);
+        SETFILTER("Advanced Line Recognition Type", '<>%1',"Advanced Line Recognition Type"::Default);
+        IF FINDSET THEN
+          REPEAT
+            TempSortedDocumentField."Document No." := TempDocLine."Document No.";
+            TempSortedDocumentField."Sort Order" := Sorting;
+            TempSortedDocumentField."Field Code" := Code;
+            TempSortedDocumentField.INSERT;
+          UNTIL NEXT = 0;
+      END;
+    END;
+
+    BEGIN
+    {
+      -----------------------------------------------------
+      CKL Software GmbH
+
+      Ver Date     Usr Change
+      -----------------------------------------------------
+      001 20180326 SRA Initial Commit
+      002 20180325 SRA New functions
+      -----------------------------------------------------
+    }
+    END.
+  }
+}
+

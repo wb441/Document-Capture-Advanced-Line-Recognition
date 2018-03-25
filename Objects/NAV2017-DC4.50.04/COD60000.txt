@@ -1,0 +1,269 @@
+OBJECT Codeunit 60000 CKL Adv. Line Recognition Mgt.
+{
+  OBJECT-PROPERTIES
+  {
+    Date=26.03.18;
+    Time=00:01:00;
+    Modified=Yes;
+    Version List=ALR002;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      Text001@1000000000 : TextConst 'DEU=Zuweisung abgebrochen, da keine Felder fr die Verknpfung ausgew„hlt worden sind!;ENU=Linking cancelled because you didn''t select fields for linking!';
+      Text002@1000000001 : TextConst 'DEU=Es wurden %1 Felder mit dem Zeilenidentifikationsfeld verknpft!;ENU=%1 fields have been linked to the line identification field!';
+      Text003@1000000002 : TextConst 'DEU=Zeilenidentifikationsfeld %1 ist noch nicht trainiert!;ENU=The line identification %1 field is not trained yet!';
+      Text004@1000000003 : TextConst 'DEU=Bitte den Beispielwert fr %1 in der ersten Belegzeile trainieren!;ENU=Please train the example value for %1 in the first document line!';
+      Text005@1000000004 : TextConst 'DEU=Bitte w„hlen Sie zuerst das gewnschte Zeilenidentifikationsfeld aus!;ENU=Please choose the line identification field first!';
+      Text006@1000000005 : TextConst 'DEU=Codeunit %1 existiert nicht!;ENU=Codeunit %1 does not exist!';
+      Text007@1113400000 : TextConst 'DEU=Es wurden %1 Felder fr die Verarbeitung von Captions in der Zeile eingerichtet.;ENU=%1 fields have been linked to the line identification field!';
+      Text008@1113400001 : TextConst 'DEU=Fehler! Fr Feld %1 wurde noch keine Caption hinterlegt! Bitte pflegen Sie die Caption zuerst.';
+      Text009@1113400002 : TextConst 'DEU=Es wurde(n) %1 Feld(er) als Offset Zeile definiert!;ENU=%1 fields have been linked to the line identification field!';
+
+    PROCEDURE SetToOffsetSourceField@1000000010(VAR TempDocumentLine@1000000008 : Record 6085596);
+    VAR
+      OffsetSourceField@1000000007 : Record 6085580;
+      TemplateFieldsToAssign@1000000005 : Record 6085580;
+      OffsetSourceFieldDocumentValue@1113400000 : Record 6085593;
+      FieldsLinked@1000000000 : Integer;
+    BEGIN
+      // Get the line identification field
+      GetOffsetSourceField(OffsetSourceField,TempDocumentLine);
+
+      // Get document value of the line identification field
+      GetOffsetSourceFieldDocumentValue(OffsetSourceFieldDocumentValue,TempDocumentLine,OffsetSourceField);
+
+      // Select fields to link with line identification field
+      IF NOT GetFieldsToLinkToOffsetSourceField(TemplateFieldsToAssign,TempDocumentLine,OffsetSourceField) THEN
+        ERROR(Text001);
+
+      // Link fields to line identification field
+      FieldsLinked := LinkFieldsToOffsetSourceField(TemplateFieldsToAssign,TempDocumentLine,OffsetSourceFieldDocumentValue);
+
+      IF FieldsLinked > 0 THEN BEGIN
+        SetTemplateToALRProcessing(TempDocumentLine."Template No.");
+      END;
+
+      MESSAGE(Text002,FieldsLinked);
+    END;
+
+    PROCEDURE SetToOffsetLineField@1113400003(VAR TempDocumentLine@1113400002 : Record 6085596);
+    VAR
+      lTemplateFieldsToAssign@1113400001 : Record 6085580;
+      lFieldsChanged@1113400000 : Integer;
+    BEGIN
+      // Select fields of the offset line
+      IF NOT SelectFields(lTemplateFieldsToAssign,TempDocumentLine."Template No.",'') THEN
+        ERROR(Text001);
+
+      lFieldsChanged := SetFieldsToOffsetLineField(lTemplateFieldsToAssign);
+      IF lFieldsChanged > 0 THEN
+        SetTemplateToALRProcessing(TempDocumentLine."Template No.");
+
+      MESSAGE(Text009,lFieldsChanged);
+    END;
+
+    PROCEDURE SetToCaptionInLineField@1113400000(VAR TempDocumentLine@1113400000 : Record 6085596);
+    VAR
+      lTemplateFieldsToAssign@1113400001 : Record 6085580;
+      lFieldsChanged@1113400002 : Integer;
+    BEGIN
+      // Select the fields for caption processing
+      IF NOT SelectFields(lTemplateFieldsToAssign,TempDocumentLine."Template No.",'') THEN
+        ERROR(Text001);
+
+      lFieldsChanged := SetFieldsToCaptionInLine(lTemplateFieldsToAssign);
+      IF lFieldsChanged > 0 THEN
+        SetTemplateToALRProcessing(TempDocumentLine."Template No.");
+
+      MESSAGE(Text002,lFieldsChanged);
+    END;
+
+    LOCAL PROCEDURE GetOffsetSourceField@1000000002(VAR TemplateField@1000000002 : Record 6085580;TempDocumentLine@1000000000 : Record 6085596) : Boolean;
+    VAR
+      TemplateFieldList@1000000001 : Page 6085602;
+    BEGIN
+      // This method let the user select the offset source record field
+      WITH TemplateField DO BEGIN
+        MESSAGE(Text005);
+
+        SETRANGE("Template No.",TempDocumentLine."Template No.");
+        SETRANGE(Type,Type::Line);
+        TemplateFieldList.SETRECORD(TemplateField);
+        TemplateFieldList.SETTABLEVIEW(TemplateField);
+        TemplateFieldList.LOOKUPMODE(TRUE);
+        IF TemplateFieldList.RUNMODAL = ACTION::LookupOK THEN BEGIN
+          TemplateFieldList.GETRECORD(TemplateField);
+          EXIT(TRUE);
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE GetOffsetSourceFieldDocumentValue@1000000001(VAR LineIdentTemplateFieldDocValue@1000000000 : Record 6085593;TempDocumentLine@1000000001 : Record 6085596;LineIdentTemplateField@1000000002 : Record 6085580);
+    BEGIN
+      WITH LineIdentTemplateFieldDocValue DO BEGIN
+        SETRANGE("Document No.",TempDocumentLine."Document No.");
+        SETRANGE("Is Value",TRUE);
+        SETRANGE(Code,LineIdentTemplateField.Code);
+        SETRANGE("Line No.",1);
+        SETRANGE(Type,Type::Line);
+        SETRANGE("Is Valid",TRUE);
+        SETRANGE("Template No.",TempDocumentLine."Template No.");
+        IF NOT FINDFIRST THEN
+          ERROR(Text003,LineIdentTemplateField.Code);
+      END;
+    END;
+
+    LOCAL PROCEDURE GetFieldsToLinkToOffsetSourceField@1000000011(VAR TemplateFieldsToAssign@1000000000 : Record 6085580;TempDocumentLine@1000000001 : Record 6085596;LineIdentTemplateField@1000000002 : Record 6085580) : Boolean;
+    VAR
+      lTemplateFieldList@1000000003 : Page 6085602;
+    BEGIN
+      WITH TemplateFieldsToAssign DO BEGIN
+        SETRANGE("Template No.",TempDocumentLine."Template No.");
+        SETRANGE(Type,Type::Line);
+        SETFILTER(Code,'<>%1',LineIdentTemplateField.Code);
+        lTemplateFieldList.SETTABLEVIEW(TemplateFieldsToAssign);
+        lTemplateFieldList.LOOKUPMODE(TRUE);
+        IF lTemplateFieldList.RUNMODAL = ACTION::LookupOK THEN BEGIN
+          lTemplateFieldList.GetFieldSelection(TemplateFieldsToAssign);
+          EXIT(TRUE);
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE LinkFieldsToOffsetSourceField@1000000016(VAR TemplateFieldsToAssign@1000000001 : Record 6085580;TempDocumentLine@1000000000 : Record 6085596;OffsetSourceFieldDocumentValue@1000000003 : Record 6085593) FieldsLinked : Integer;
+    VAR
+      lDocumentValue@1000000002 : Record 6085593;
+    BEGIN
+      IF TemplateFieldsToAssign.FIND('-') THEN
+      REPEAT
+        WITH lDocumentValue DO BEGIN
+          SETRANGE("Document No.",TempDocumentLine."Document No.");
+          SETRANGE("Is Value",TRUE);
+          SETRANGE(Code,TemplateFieldsToAssign.Code);
+          SETRANGE("Line No.",0,1);
+          SETRANGE(Type,Type::Line);
+          SETRANGE("Is Valid",TRUE);
+          SETRANGE("Template No.",TempDocumentLine."Template No.");
+
+          IF NOT lDocumentValue.FINDFIRST THEN
+            ERROR(Text004,TemplateFieldsToAssign.Code);
+
+          TemplateFieldsToAssign."Offset Top" := Top - OffsetSourceFieldDocumentValue.Top;
+          TemplateFieldsToAssign."Offset Left" := Left - OffsetSourceFieldDocumentValue.Left;
+          TemplateFieldsToAssign."Offset Height" := Bottom - Top; // - LineIdentTemplateFieldDocValue.Bottom;
+          TemplateFieldsToAssign."Offset Width" := Right - Left; //LineIdentTemplateFieldDocValue.Right;
+          TemplateFieldsToAssign."Advanced Line Recognition Type" := TemplateFieldsToAssign."Advanced Line Recognition Type"::OffsetField;
+          TemplateFieldsToAssign."Offset Source Field" := OffsetSourceFieldDocumentValue.Code;
+          IF TemplateFieldsToAssign.MODIFY(TRUE) THEN
+            FieldsLinked += 1;
+        END;
+      UNTIL TemplateFieldsToAssign.NEXT = 0;
+    END;
+
+    LOCAL PROCEDURE SelectFields@1113400002(VAR TemplateFieldsToAssign@1000000000 : Record 6085580;TemplateNo@1113400001 : Code[20];ExcludedFieldsFilter@1113400000 : Text[250]) : Boolean;
+    VAR
+      lTemplateFieldList@1000000003 : Page 6085602;
+    BEGIN
+      WITH TemplateFieldsToAssign DO BEGIN
+        SETRANGE("Template No.",TemplateNo);
+        SETRANGE(Type,Type::Line);
+        IF ExcludedFieldsFilter <> '' THEN
+          SETFILTER(Code,'<>%1',ExcludedFieldsFilter);
+        lTemplateFieldList.SETTABLEVIEW(TemplateFieldsToAssign);
+        lTemplateFieldList.LOOKUPMODE(TRUE);
+        IF lTemplateFieldList.RUNMODAL = ACTION::LookupOK THEN BEGIN
+          lTemplateFieldList.GetFieldSelection(TemplateFieldsToAssign);
+          EXIT(TRUE);
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE SetFieldsToCaptionInLine@1113400001(VAR TemplateFieldsToAssign@1113400000 : Record 6085580) FieldsChanged : Integer;
+    VAR
+      lTemplateFieldCaption@1113400001 : Record 6085581;
+    BEGIN
+      IF TemplateFieldsToAssign.FIND('-') THEN
+      REPEAT
+        lTemplateFieldCaption.SETRANGE("Template No.",TemplateFieldsToAssign."Template No.");
+        lTemplateFieldCaption.SETRANGE(Code,TemplateFieldsToAssign.Code);
+        lTemplateFieldCaption.SETRANGE(Type,1);
+        IF lTemplateFieldCaption.ISEMPTY THEN
+          ERROR(Text008,TemplateFieldsToAssign.Code);
+        TemplateFieldsToAssign."Caption Offset X" := 0;
+        TemplateFieldsToAssign."Caption Offset Y" := 0;
+        TemplateFieldsToAssign."Search for Value" := FALSE;
+        TemplateFieldsToAssign.Required := FALSE;
+        TemplateFieldsToAssign."Advanced Line Recognition Type" := TemplateFieldsToAssign."Advanced Line Recognition Type"::CaptionInLine;
+        IF TemplateFieldsToAssign.MODIFY(TRUE) THEN
+          FieldsChanged += 1;
+      UNTIL TemplateFieldsToAssign.NEXT = 0;
+    END;
+
+    LOCAL PROCEDURE SetFieldsToOffsetLineField@1113400007(VAR TemplateFieldsToAssign@1113400000 : Record 6085580) FieldsChanged : Integer;
+    VAR
+      lTemplateFieldCaption@1113400001 : Record 6085581;
+    BEGIN
+      IF TemplateFieldsToAssign.FIND('-') THEN
+      REPEAT
+        lTemplateFieldCaption.SETRANGE("Template No.",TemplateFieldsToAssign."Template No.");
+        lTemplateFieldCaption.SETRANGE(Code,TemplateFieldsToAssign.Code);
+        lTemplateFieldCaption.SETRANGE(Type,1);
+        IF lTemplateFieldCaption.ISEMPTY THEN
+          ERROR(Text008,TemplateFieldsToAssign.Code);
+        TemplateFieldsToAssign."Caption Offset X" := 0;
+        TemplateFieldsToAssign."Caption Offset Y" := 0;
+        TemplateFieldsToAssign."Search for Value" := FALSE;
+        TemplateFieldsToAssign.Required := FALSE;
+        TemplateFieldsToAssign."Advanced Line Recognition Type" := TemplateFieldsToAssign."Advanced Line Recognition Type"::OffsetLine;
+        IF TemplateFieldsToAssign.MODIFY(TRUE) THEN
+          FieldsChanged += 1;
+      UNTIL TemplateFieldsToAssign.NEXT = 0;
+    END;
+
+    LOCAL PROCEDURE GetAdvLineRecCodeunit@1000000000() : Integer;
+    VAR
+      Object@1000000000 : Record 2000000001;
+    BEGIN
+      Object.SETRANGE(Type,Object.Type::Codeunit);
+      Object.SETRANGE(Name,'CKL Advanced Line Capture');
+      IF Object.ISEMPTY THEN
+        ERROR(Text006,'CKL Advanced Line Capture');
+
+      IF Object.FINDSET THEN
+        EXIT(Object.ID);
+    END;
+
+    LOCAL PROCEDURE SetTemplateToALRProcessing@1113400005(TemplateNo@1113400000 : Code[20]);
+    VAR
+      lTemplate@1113400001 : Record 6085579;
+    BEGIN
+      // Change Codeunit ID to our 60001 codeunit on template
+      IF lTemplate.GET(TemplateNo) THEN BEGIN
+        lTemplate.VALIDATE("Codeunit ID: Line Capture",GetAdvLineRecCodeunit());
+        lTemplate.MODIFY(TRUE);
+      END;
+    END;
+
+    BEGIN
+    {
+      -----------------------------------------------------
+      CKL Software GmbH
+
+      Ver Date     Usr Change
+      -----------------------------------------------------
+      001 20180301 SRA Initial Commit
+      002 20180325 SRA New functions for Caption in Line and Offset Line
+                       Renamed of existing functions
+      -----------------------------------------------------
+    }
+    END.
+  }
+}
+
